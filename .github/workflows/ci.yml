@@ -9,6 +9,10 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: "postgresql://user:pass@localhost:5432/qrop"
+      AUTH_SECRET: "ci-test-secret-not-real"
+      AUTH_URL: "http://localhost:3000"
     steps:
       - uses: actions/checkout@v4
 
