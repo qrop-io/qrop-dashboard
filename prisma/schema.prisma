@@ -1,0 +1,235 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Auth (NextAuth) ───
+
+model User {
+  id             String    @id @default(cuid())
+  name           String?
+  email          String    @unique
+  emailVerified  DateTime?
+  hashedPassword String?
+  image          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  accounts    Account[]
+  sessions    Session[]
+  farmMembers FarmMember[]
+
+  @@map("users")
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ─── Farm ───
+
+model Farm {
+  id         String   @id @default(cuid())
+  name       String
+  location   String?  // human-readable location
+  timezone   String   @default("UTC")
+  boundaries Json?    // GeoJSON Polygon
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  members      FarmMember[]
+  coordinators Coordinator[]
+  robots       Robot[]
+  missions     Mission[]
+
+  @@map("farms")
+}
+
+enum FarmRole {
+  OWNER
+  MANAGER
+  VIEWER
+}
+
+model FarmMember {
+  id     String   @id @default(cuid())
+  userId String
+  farmId String
+  role   FarmRole @default(VIEWER)
+  joinedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  farm Farm @relation(fields: [farmId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, farmId])
+  @@map("farm_members")
+}
+
+// ─── Coordinator ───
+
+enum CoordinatorStatus {
+  ONLINE
+  OFFLINE
+  SYNCING
+  ERROR
+}
+
+model Coordinator {
+  id           String            @id @default(cuid())
+  farmId       String
+  hardwareId   String?           @unique
+  name         String?
+  apiKey       String?           @unique
+  pairingCode  String?           @unique
+  pairingExpiry DateTime?
+  status       CoordinatorStatus @default(OFFLINE)
+  lastSeen     DateTime?
+  version      String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+
+  farm   Farm    @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  robots Robot[]
+
+  @@map("coordinators")
+}
+
+// ─── Robot ───
+
+enum RobotType {
+  SCOUT
+  WEEDER
+  DRONE
+}
+
+enum RobotState {
+  ONLINE
+  OFFLINE
+  BUSY
+  ERROR
+  CHARGING
+  RETURNING_HOME
+}
+
+model Robot {
+  id              String     @id @default(cuid())
+  farmId          String
+  coordinatorId   String?
+  robotType       RobotType
+  name            String?
+  status          RobotState @default(OFFLINE)
+  batteryPct      Float?
+  lastPosition    Json?      // GeoPosition
+  firmwareVersion String?
+  lastSeen        DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  farm        Farm         @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  coordinator Coordinator? @relation(fields: [coordinatorId], references: [id], onDelete: SetNull)
+  missions    Mission[]
+  telemetry   Telemetry[]
+
+  @@map("robots")
+}
+
+// ─── Mission ───
+
+enum MissionType {
+  SCAN
+  WEED
+  PATROL
+  RETURN_HOME
+}
+
+enum MissionState {
+  PENDING
+  ASSIGNED
+  IN_PROGRESS
+  PAUSED
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model Mission {
+  id           String       @id @default(cuid())
+  farmId       String
+  missionType  MissionType
+  status       MissionState @default(PENDING)
+  priority     Int          @default(0)
+  area         Json?        // GeoJSON Polygon
+  waypoints    Json?        // GeoPosition[]
+  parameters   Json?        // MissionParameters
+  progressPct  Float        @default(0)
+  assignedRobotId String?
+  createdBy    String?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  farm  Farm   @relation(fields: [farmId], references: [id], onDelete: Cascade)
+  robot Robot? @relation(fields: [assignedRobotId], references: [id], onDelete: SetNull)
+
+  @@map("missions")
+}
+
+// ─── Telemetry (time-series) ───
+
+model Telemetry {
+  id        String   @id @default(cuid())
+  robotId   String
+  timestamp DateTime @default(now())
+  position  Json?    // GeoPosition
+  batteryPct Float?
+  velocityMps Float?
+  imu       Json?    // IMU data
+  cpuTempC  Float?
+  wifiRssi  Int?
+
+  robot Robot @relation(fields: [robotId], references: [id], onDelete: Cascade)
+
+  @@index([robotId, timestamp])
+  @@map("telemetry")
+}
